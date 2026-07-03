@@ -1,2 +1,8 @@
-aiogram
-apscheduler
+aiogram>=3.0.0
+apscheduler>=3.0.0
+sqlalchemy>=2.0.0
+asyncpg
+redis
+aiosqlite
+python-dotenv
+pytz

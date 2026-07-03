@@ -1,0 +1,40 @@
+1420: @router.message(F.text == "📊 Bronlar")
+1421: async def restaurant_bookings(msg: Message):
+1422: user = db_get_user(msg.from_user.id)
+1423: if not user or user["role"] != "restaurant":
+1424: return
+1425: rest = db_get_restaurant_by_owner(msg.from_user.id)
+1426: if not rest or rest["is_approved"] != 1:
+1427: await msg.answer("❗ Restoraningiz hali tasdiqlanmagan.")
+1428: return
+1429: 
+1430: pending = db_restaurant_bookings(msg.from_user.id, "pending")
+1431: confirmed = db_restaurant_bookings(msg.from_user.id, "confirmed")
+1432: 
+1433: if not pending and not confirmed:
+1434: await msg.answer("📭 Bronlar yo'q.", reply_markup=kb_main_restaurant())
+1435: return
+1436: 
+1437: if pending:
+1438: await msg.answer(f"⏳ <b>Kutayotgan so'rovlar ({len(pending)}):</b>")
+1439: for b in pending[:10]:
+1440: await msg.answer(
+1441: format_booking_full(b, show_customer=True),
+1442: reply_markup=kb_booking_action(b["id"]),
+1443: )
+1444: 
+1445: if confirmed:
+1446: text = f"✅ <b>Tasdiqlangan bronlar ({len(confirmed)}):</b>\n\n"
+1447: for b in confirmed[:15]:
+1448: text += (
+1449: f"• #{b['id']}  {b['booking_date']} {b['booking_time']}\n"
+1450: f"  {b['customer_name']} ({b['customer_phone']})  👥{b['guests_count']}\n"
+1451: )
+1452: await msg.answer(text, reply_markup=kb_main_restaurant())
+1453: 
+1454: 
+1455: @router.callback_query(F.data.startswith("bconfirm_"))
+1456: async def confirm_booking_cb(call: CallbackQuery):
+1457: booking_id = int(call.data.split("_")[1])
+1458: booking = db_get_booking(booking_id)
+1459: if not booking:

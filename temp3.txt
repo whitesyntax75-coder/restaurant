@@ -1,0 +1,60 @@
+1740: rest = rests[0]
+1741: await send_restaurant_menu(msg, rest["id"], rest["name"])
+1742: else:
+1743: buttons = [
+1744: [InlineKeyboardButton(text=r["name"], callback_data=f"menu_{r['id']}")]
+1745: for r in rests
+1746: ]
+1747: await msg.answer(
+1748: "🏠 <b>Qaysi restoran menyusini ko'rmoqchisiz?</b>",
+1749: reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+1750: )
+1751: 
+1752: 
+1753: async def send_restaurant_menu(msg, rest_id: int, rest_name: str):
+1754: menu = db_get_menu(rest_id)
+1755: rating = db_get_avg_rating(rest_id)
+1756: stars = "⭐" * round(rating["avg"]) if rating["avg"] else "—"
+1757: text = f"📜 <b>{rest_name} — Menyu</b>\n"
+1758: text += f"⭐ Reyting: {rating['avg']} / 5  ({rating['count']} ovoz)\n\n"
+1759: if not menu:
+1760: text += "Menyu hali qo'shilmagan."
+1761: else:
+1762: for section in menu:
+1763: cat = section["category"]
+1764: text += f"{cat['emoji']} <b>{cat['name']}</b>\n"
+1765: for item in section["items"]:
+1766: text += f"  • {item['name']}: <b>{item['price']:,} so'm</b>\n"
+1767: text += "\n"
+1768: await msg.answer(text)
+1769: 
+1770: 
+1771: @router.callback_query(F.data.startswith("menu_"))
+1772: async def menu_callback(call: CallbackQuery):
+1773: rest_id = int(call.data.split("_")[1])
+1774: rest = db_get_restaurant_by_id(rest_id)
+1775: if not rest:
+1776: await call.answer("Restoran topilmadi!", show_alert=True)
+1777: return
+1778: await call.message.delete()
+1779: await send_restaurant_menu(call.message, rest_id, rest["name"])
+1780: 
+1781: 
+1782: # ── MIJOZ: BAHO BERISH ────────────────────────────────────────────────────────
+1783: 
+1784: @router.message(F.text == "⭐ Baho berish")
+1785: async def rate_start(msg: Message, state: FSMContext):
+1786: user = db_get_user(msg.from_user.id)
+1787: if not user or user["role"] != "customer":
+1788: await msg.answer("❗ Avval mijoz sifatida ro'yxatdan o'ting. /start")
+1789: return
+1790: rests = db_list_approved_restaurants()
+1791: if not rests:
+1792: await msg.answer("😔 Hozircha faol restoranlar yo'q.")
+1793: return
+1794: buttons = [
+1795: [InlineKeyboardButton(text=r["name"], callback_data=f"rate_rest_{r['id']}")]
+1796: for r in rests
+1797: ]
+1798: await msg.answer(
+1799: "🏠 <b>Qaysi restoranga baho bermoqchisiz?</b>",

@@ -1,0 +1,40 @@
+800: def format_booking_short(b: dict) -> str:
+801: e = STATUS_EMOJI.get(b["status"], "?")
+802: s = STATUS_TEXT.get(b["status"], b["status"])
+803: return (
+804: f"{e} <b>#{b['id']}</b> — {b['booking_date']} {b['booking_time']}\n"
+805: f"   🏠 {b['rest_name']} | 👥 {b['guests_count']} kishi\n"
+806: f"   Holat: {s}\n"
+807: )
+808: 
+809: 
+810: def format_booking_full(b: dict, show_customer: bool = False) -> str:
+811: e = STATUS_EMOJI.get(b["status"], "?")
+812: s = STATUS_TEXT.get(b["status"], b["status"])
+813: text = (
+814: f"🆔 <b>Bron #{b['id']}</b>\n"
+815: f"📅 Sana: {b['booking_date']}  🕐 {b['booking_time']}\n"
+816: f"👥 Mehmonlar: {b['guests_count']} kishi\n"
+817: f"📌 Holat: {e} {s}\n"
+818: )
+819: if b.get("note"):
+820: text += f"📝 Izoh: {b['note']}\n"
+821: if show_customer:
+822: text += f"👤 Mijoz: {b['customer_name']}  📞 {b['customer_phone']}\n"
+823: return text
+824: 
+825: 
+826: # ─── ROUTER ────────────────────────────────────────────────────────────────────
+827: 
+828: router = Router()
+829: 
+830: # ── /start ───────────────────────────────────────────────────────────────────
+831: 
+832: @router.message(CommandStart())
+833: async def cmd_start(msg: Message, state: FSMContext):
+834: await state.clear()
+835: tg_id = msg.from_user.id
+836: 
+837: # Super admin
+838: if tg_id in SUPER_ADMIN_IDS:
+839: conn = get_db()
