@@ -209,7 +209,7 @@ def seed_data():
         (owner_tg_id, name, cuisine_type, tables_count,
          price_min, price_max, phone, address, is_approved)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    """, (admin_id, "SHRIFT X", "🍔 Fast Food", 10,
+    """, (admin_id, "SHRIFT X", "ALI DÖNER", 10,
           12000, 40000, "+998999108050",
           "Guliston shahri"))
 
@@ -266,7 +266,7 @@ def seed_data():
         (owner_tg_id, name, cuisine_type, tables_count,
          price_min, price_max, phone, address, is_approved)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    """, (djigar_dummy_id, "DJIGAR", "🥩 Grill", 15,
+    """, (djigar_dummy_id, "DJIGAR", "DJIGAR", 15,
           3000, 24000, "+998938273311",
           "Saxovatning yonida, Guliston shahri"))
 
@@ -683,7 +683,7 @@ def kb_cuisines(cuisines: list) -> InlineKeyboardMarkup:
 def kb_restaurants(restaurants: list) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
-            text=f"🍴 {r['name']}  |  {r['price_min']//1000}K–{r['price_max']//1000}K so'm",
+            text=f"🍴 {r['name']}  |  {r['price_min']//1000}K {r['price_max']//1000}K so'm",
             callback_data=f"rest_{r['id']}"
         )]
         for r in restaurants
