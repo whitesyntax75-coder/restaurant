@@ -203,7 +203,7 @@ def seed_data():
         (admin_id, "superadmin", "Super Admin", "+998999108050"),
     )
 
-    # Restoran qo'shish
+    # ─── SHRIFT X restoran ────────────────────────────────────────────────────────
     conn.execute("""
         INSERT INTO restaurants
         (owner_tg_id, name, cuisine_type, tables_count,
@@ -247,6 +247,56 @@ def seed_data():
         conn.execute(
             "INSERT INTO menu_categories (restaurant_id, name, emoji) VALUES (?,?,?)",
             (rest_id, cat_name, emoji),
+        )
+        cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        for item_name, price in items:
+            conn.execute(
+                "INSERT INTO menu_items (category_id, name, price) VALUES (?,?,?)",
+                (cat_id, item_name, price),
+            )
+
+    # ─── DJIGAR restoran ──────────────────────────────────────────────────────────
+    djigar_dummy_id = 1111111111
+    conn.execute(
+        "INSERT OR IGNORE INTO users (tg_id, role, full_name, phone) VALUES (?,?,?,?)",
+        (djigar_dummy_id, "restaurant", "DJIGAR Admin", "+998938273311"),
+    )
+    conn.execute("""
+        INSERT INTO restaurants
+        (owner_tg_id, name, cuisine_type, tables_count,
+         price_min, price_max, phone, address, is_approved)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    """, (djigar_dummy_id, "DJIGAR", "🥩 Grill", 15,
+          3000, 24000, "+998938273311",
+          "Saxovatning yonida, Guliston shahri"))
+
+    djigar_id = conn.execute("SELECT id FROM restaurants WHERE owner_tg_id=?", (djigar_dummy_id,)).fetchone()[0]
+
+    djigar_menu = {
+        ("Shashliqlar", "🍖"): [
+            ("Napoleon shashliq", 19000),
+            ("Qanot shashliqi", 17000),
+            ("Baliq filesi shashliqi", 19000),
+            ("DJIGAR jigar shashliqi", 15000),
+            ("Mol gosht bolagi", 19000),
+        ],
+        ("Hot-doglar", "🌭"): [
+            ("Hot-dog (qoy goshti)", 24000),
+            ("Hot-dog (mol goshti)", 24000),
+            ("Hot-dog (maydalangan)", 19000),
+        ],
+        ("Ichimliklar", "🥛"): [
+            ("Choy bardak", 3000),
+            ("Ayron 0.45", 8000),
+            ("Ayron 0.6", 10000),
+            ("Choy limon bilan", 10000),
+        ],
+    }
+
+    for (cat_name, emoji), items in djigar_menu.items():
+        conn.execute(
+            "INSERT INTO menu_categories (restaurant_id, name, emoji) VALUES (?,?,?)",
+            (djigar_id, cat_name, emoji),
         )
         cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         for item_name, price in items:
