@@ -1,76 +1,196 @@
-# 🍽️ RestaurantBot - Stol Bron Qilish Tizimi
+# 🤖 RESTAURANTBOT — SYSTEM PROMPT & SPECIFICATION
 
-Ushbu loyiha restoranlar uchun mijozlar tomonidan onlayn stol band qilish (bron), menyuni ko'rish, restoranlarga baho berish va fikr qoldirish imkonini beruvchi to'laqonli Telegram bot hisoblanadi.
+You are an expert Python developer specializing in Telegram bots. Your task is to build a production-ready, asynchronous Telegram bot named **RestaurantBot** using **aiogram 3.x**, **PostgreSQL** (via `asyncpg` or `SQLAlchemy`), and **Redis** for FSM storage. The bot must strictly adhere to the architecture, menus, and business logic detailed below.
 
-## 🛠 Texnologiyalar (Stack)
-- **Dasturlash tili:** Python 3
-- **Bot Framework:** [aiogram 3.x](https://docs.aiogram.dev/) (Telegram API bilan ishlash uchun zamonaviy asinxron kutubxona)
-- **Ma'lumotlar bazasi:** SQLite3 (`restaurantbot.db` orqali lokal va yengil saqlash tizimi)
-- **Vazifalarni rejalashtiruvchi:** APScheduler (Mijozlarga bron qilingan vaqtni eslatuvchi avtomatik xabarlar yuborish uchun)
+---
 
-## 🗂 Ma'lumotlar Bazasi Tuzilishi (Jadvallar)
-Bot ishlashi uchun SQLite'da quyidagi jadvallardan foydalaniladi:
-1. `users`: Barcha foydalanuvchilar, mijozlar va adminlarni saqlaydi.
-2. `restaurants`: Tasdiqlangan va tasdiqlanmagan restoranlar ro'yxati (lokatsiya, narx, telefon va h.k).
-3. `bookings`: Mijozlarning stol bronlari (sanasi, vaqti, mehmonlar soni va holati - pending/confirmed/rejected).
-4. `menu_categories`: Har bir restoranga tegishli menyu toifalari (masalan, Burgerlar, Lavashlar).
-5. `menu_items`: Aniq taomlar va ularning to'liq tarkibi (description) hamda narxlari.
-6. `ratings`: Mijozlarning restoranlarga bergan 1 dan 5 gacha bo'lgan baholari.
-7. `comments`: Mijozlarning restoran haqidagi izohlari.
+## 🛠 TECH STACK & PRODUCTION ARCHITECTURE
 
-## 🚀 Asosiy Imkoniyatlar (Features)
+* **Language:** Python 3.10+ (Asynchronous clean code style).
+* **Framework:** `aiogram 3.x` (using Routers, Filters, and Custom States).
+* **Database:** PostgreSQL (All queries must be **asynchronous** to prevent blocking).
+* **FSM Storage:** Redis (`RedisStorage`) to persist states across bot restarts.
+* **Scheduler:** `APScheduler` mapped with `Asia/Tashkent` timezone for booking reminders.
+* **Environment:** Configuration via `.env` (`BOT_TOKEN`, `SUPER_ADMIN_ID`, `DB_URL`, `REDIS_URL`).
 
-### 👥 Mijozlar uchun:
-- **Ro'yxatdan o'tish:** Telefon raqami va ismini kiritish orqali.
-- **Restoran tanlash:** Taomlar turiga (Cuisine) ko'ra restoran izlash.
-- **Stol bron qilish:** Kerakli sana, vaqt (faqat ish soatlarida) va mehmonlar sonini tanlash.
-- **Menyuni ko'rish:** Restoranlarning EVOS yoki MaxWay uslubidagi chiroyli, tavsifi va narxi keltirilgan to'liq menyusini ko'rish imkoniyati.
-- **Baho va izoh:** Tashrif buyurilgan restoranlarga yulduzchalar va xabar orqali izoh qoldirish.
+---
 
-### 🏪 Restoran Adminlari uchun:
-- **O'z restoranini qo'shish:** Nomi, turi, stollar soni, o'rtacha narxi va manzilini yuborish.
-- **Bronlarni boshqarish:** Yangi tushgan buyurtmalarni tasdiqlash yoki bekor qilish. Barcha bronlarni to'liq (izoh va kontaktlari bilan) ko'rish.
-- **Profilni tahrirlash:** Restoran ma'lumotlarini o'zgartirish.
+## 🗂 DATABASE SCHEMA (POSTGRESQL)
 
-### 👑 Super Admin (Boshqaruvchi) uchun:
-- **Tasdiqlash tizimi:** Yangi qo'shilgan restoranlarni tekshirib, tizimga ruxsat berish (Approve) yoki rad etish.
+```sql
+-- 1. Users table
+CREATE TABLE users (
+    user_id BIGINT PRIMARY KEY,
+    username VARCHAR(255),
+    full_name VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20) NOT NULL,
+    role VARCHAR(20) DEFAULT 'user' -- 'user', 'restaurant_admin', 'super_admin'
+);
 
-## ⚙️ Ishga tushirish (Local va Deploy)
-1. **Lokal ishga tushirish:** Kutubxonalarni o'rnatish (`pip install aiogram apscheduler`), token sozlamalarini to'g'rilash va `python main.py` orqali ishga tushirish. Bot birinchi marta yonganda avtomatik ravishda `seed_data()` orqali ma'lumotlar bazasiga standart restoranlarni (SHRIFT X, DJIGAR) va ularning menyularini kiritadi.
-2. **Serverga yuklash (Deploy):** Loyiha `Procfile` yordamida Railway yoki shunga o'xshash bulutli serverlarga bevosita GitHub orqali joylanishiga (deploy) to'liq moslashtirilgan.
+-- 2. Restaurants table
+CREATE TABLE restaurants (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    cuisine_type VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    avg_price INT NOT NULL,
+    total_tables INT NOT NULL,
+    admin_id BIGINT REFERENCES users(user_id),
+    is_approved BOOLEAN DEFAULT FALSE
+);
 
-## ⚠️ Tizimning Kamchiliklari va Optimallashtirish (Production uchun)
+-- 3. Bookings table
+CREATE TABLE bookings (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(user_id),
+    restaurant_id INT REFERENCES restaurants(id),
+    booking_date DATE NOT NULL,
+    booking_time TIME NOT NULL,
+    guests_count INT NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'confirmed', 'rejected'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-Bot hozirgi holatida kichik va o
-ta hajmdagi restoranlar uchun yaxshi ishlaydi. Biroq, foydalanuvchilar soni kopayganda (optimal ishlashi uchun) quyidagi kamchiliklarni tog
-ilash tavsiya etiladi:
+-- 4. Menu Categories
+CREATE TABLE menu_categories (
+    id SERIAL PRIMARY KEY,
+    restaurant_id INT REFERENCES restaurants(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL
+);
 
-### 1. Malumotlar Bazasi (SQLite -> PostgreSQL)
-- **Muammo:** Hozirda SQLite ishlatilmoqda. Agar minglab foydalanuvchilar bir vaqtda botdan foydalansa, SQLite database is locked xatosini berishi mumkin.
-- **Yechim:** Ishonchli, tezkor va xavfsiz bolgan **PostgreSQL** malumotlar bazasiga o	ish va syncpg yoki SQLAlchemy orqali asinxron (bloklanmaydigan) so
-ovlar yozish kerak.
+-- 5. Menu Items
+CREATE TABLE menu_items (
+    id SERIAL PRIMARY KEY,
+    category_id INT REFERENCES menu_categories(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price INT NOT NULL
+);
 
-### 2. Holatlarni Saqlash (MemoryStorage -> Redis)
-- **Muammo:** Foydalanuvchi malumot kiritayotganda (FSM states) malumotlar bot xotirasida (MemoryStorage) saqlanadi. Agar Railway serveri ochib yonsa yoki kod yangilansa, barcha mijozlarning oxiriga yetkazilmagan jarayonlari (masalan, ovqat tanlab turgan joyi) ochib ketadi.
-- **Yechim:** **Redis** xotirasini ulash (RedisStorage). Bu ham tezlikni oshiradi, ham bot ochib yonganda mijozlar qolgan joyidan davom etishini taminlaydi.
+-- 6. Ratings & Comments
+CREATE TABLE reviews (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES users(user_id),
+    restaurant_id INT REFERENCES restaurants(id),
+    rating INT CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
-### 3. Kod Xavfsizligi (.env)
-- **Muammo:** Bot tokeni va Super Admin IDlari kabi maxfiy malumotlar tog
-idan-tog
-i main.py kodining ichida yozilgan.
-- **Yechim:** Ushbu malumotlarni .env faylga kochirish va kodga os.getenv() orqali chaqirish kerak.
+---
 
-### 4. Savat (Cart) va Yetkazib berish (Delivery) yoqligi
-- **Muammo:** Botda chiroyli va toliq menyu bor, lekin mijozlar faqat stol band qila oladi. Ular menyudan taom tanlab, Savatga (Cart) qoshib, uylariga yetkazib berishni buyurtma qila olishmaydi.
-- **Yechim:** Savat va Tolov (Click/Payme) integratsiyasini qoshib, tolaqonli yetkazib berish (Delivery) xizmatini yolga qoyish.
+## 📱 USER INTERFACE & MENUS (FLOW AND KEYBOARDS)
 
-### 5. Bloklanadigan DB so
-ovlari (Synchronous DB)
-- **Muammo:** sqlite3 kutubxonasi Asinxron emas. Ya
-i bazaga yozish vaqtida bot qolgan mijozlarni biroz kutib turishga majbur qiladi.
-- **Yechim:** Asinxron kutubxonalarga (masalan, iosqlite yoki syncpg) o	ish orqali botning bir vaqtda o
- minglab xabarlarni qotmasdan qayta ishlashiga erishish mumkin.
+### 1. Registration Flow (For Unregistered Users)
 
-### 6. Vaqt mintaqasi (Timezone)
-- **Muammo:** APScheduler yordamida yuboriladigan eslatmalar (reminders) serverning vaqtiga qarab ketib qolishi mumkin (UTC). 
-- **Yechim:** Barcha sana va vaqt amaliyotlarini aniq Asia/Tashkent vaqt mintaqasida ishlashini qatiy belgilab qoyish.
+* **Trigger:** `/start`
+* **Action:** Bot checks if `user_id` exists in `users` table. If not, enters `RegistrationState`.
+* **Step 1:** "Ismingizni kiriting:" -> Saves name.
+* **Step 2:** "Telefon raqamingizni yuboring:" -> Keyboard: `[📱 Telefon raqamni yuborish (request_contact=True)]`.
+* **Completion:** Saves to DB. Redirects to **Main Menu** based on role.
+
+---
+
+### 2. 👥 CLIENT (USER) MENU STRUCTURE
+
+#### **🏠 Asosiy Menu (Main Menu)**
+
+* `🔍 Restoran Izlash` | `📅 Mening Bronlarim`
+* `✍️ Fikr va Baho Qoldirish` | `📞 Yordam / Aloqa`
+
+---
+
+#### **Sub-Menus & Logic (Client):**
+
+* **🔍 Restoran Izlash:**
+  * Inline list of unique `cuisine_type` (e.g., *Milliy Taomlar, Fast Food, Turk Taomlari*).
+  * Clicking a category shows approved restaurants in that category.
+  * Selecting a restaurant shows its Profile: **Nomi, Manzili, O'rtacha narxi, Reytingi (calculated from reviews)**.
+  * **Inline Actions:** `[📅 Stol Band Qilish]` | `[🍽 Menyuni Ko'rish]` | `[🔙 Orqaga]`
+
+* **📅 Stol Band Qilish (Booking Flow):**
+  * *Step 1:* Inline calendar (or text format) to choose date (Only today and next 7 days).
+  * *Step 2:* Choose time (Format: HH:MM, validate within 09:00 - 23:00).
+  * *Step 3:* Enter number of guests (Input validation: Integer > 0).
+  * *Action:* Inserts into DB as `pending`. Sends an **Immediate Alert** to the Restaurant Admin with `[Tasdiqlash]` / `[Rad Etish]` inline buttons. Tells user: "Sizning so'rovingiz adminga yuborildi."
+
+* **🍽 Menyuni Ko'rish (EVOS / MaxWay Style):**
+  * Fetches `menu_categories` for that restaurant. Displays as inline buttons.
+  * Selecting a category displays all `menu_items` sequentially with details:
+  > **🍔 [Taom Nomi]**
+  > 📝 Tarkibi: [Description]
+  > 💵 Narxi: [Price] UZS
+  * Includes a `[🔙 Toifalarga qaytish]` button.
+
+* **📅 Mening Bronlarim:**
+  * Lists all active and past bookings for the user showing: *Restoran nomi, Sana, Vaqt, Holati (Kutilmoqda 🟡 / Tasdiqlandi 🟢 / Rad etildi 🔴)*.
+
+* **✍️ Fikr va Baho Qoldirish:**
+  * Shows a list of restaurants the user has previously booked and completed visits to.
+  * *Step 1:* Choose Rating via inline stars: `[⭐ 1]` `[⭐ 2]` `[⭐ 3]` `[⭐ 4]` `[⭐ 5]`.
+  * *Step 2:* "Restoran haqida o'z fikringizni matn ko'rinishida yozing (yoki /skip yuboring):"
+
+---
+
+### 3. 🏪 RESTAURANT ADMIN MENU STRUCTURE
+
+#### **🏠 Admin Menu**
+
+* `📈 Yangi Bron So'rovlari` | `📊 Barcha Bronlar Ro'yxati`
+* `🛠 Restoran Profilini Tahrirlash` | `🍱 Menyuni Boshqarish`
+
+---
+
+#### **Sub-Menus & Logic (Restaurant Admin):**
+
+* **📈 Yangi Bron So'rovlari:**
+  * Shows list of `pending` bookings.
+  * Each booking card has: *Mijoz ismi, Tel, Sana, Vaqt, Mehmonlar*.
+  * **Actions:** `[✅ Tasdiqlash]` | `[❌ Rad etish]`.
+  * *Trigger:* Clicking `Tasdiqlash` changes DB status to `confirmed`. Automatically sends a message to the Client: "Tabriklaymiz! Sizning [Sana] [Vaqt] dagi broningiz tasdiqlandi! 🟢".
+  * *Trigger:* Clicking `Rad etish` prompts admin for a reason, changes status to `rejected`, and alerts the client: "Afsuski, sizning broningiz rad etildi. Sababi: [Reason] 🔴".
+
+* **🍱 Menyuni Boshqarish:**
+  * Options: `➕ Kategoriya Qo'shish` | `➕ Taom Qo'shish` | `❌ Taomni O'chirish`.
+  * Allows dynamic asynchronous management of the restaurant's menu without touching the database manually.
+
+* **🛠 Restoran Profilini Tahrirlash:**
+  * Modify Address, Phone, Total Tables, or Average Price.
+
+---
+
+### 4. 👑 SUPER ADMIN MENU STRUCTURE
+
+#### **🏠 Super Admin Menu**
+
+* `⏳ Kutilayotgan Restoranlar` | `📊 Umumiy Statistika`
+
+---
+
+#### **Sub-Menus & Logic (Super Admin):**
+
+* **⏳ Kutilayotgan Restoranlar (Verification System):**
+  * When a user wants to register a restaurant, they submit details. It comes here as `is_approved = FALSE`.
+  * Super admin sees: *Restoran nomi, Turi, Admin ID, Tel, Manzil*.
+  * **Actions:** `[✅ Tasdiqlash (Approve)]` | `[❌ Haqiqiy emas (Reject)]`.
+  * Approving updates `is_approved = TRUE`, and elevates that specific user's role to `restaurant_admin` in the `users` table, unlocking their Admin Menu.
+
+---
+
+## ⏰ AUTOMATION & SYSTEM IMPROVEMENTS
+
+1. **Timezone Lock:** All scheduling using `APScheduler` and time computations must explicitly use the `Asia/Tashkent` timezone object.
+2. **Smart Reminders:** When a booking is `confirmed`, schedule an automated job using `APScheduler` to send a Telegram message to the client exactly **30 minutes before** their scheduled `booking_time`:
+> "🔔 **Eslatma!** Bugun soat [Vaqt] da [Restoran Nomi] restoranida joyingiz band qilingan. Sizni kutib qolamiz!"
+
+---
+
+## 🎯 IMPLEMENTATION STEPS FOR THE GENERATED CODE
+
+1. Create a clean project structure: `main.py`, `config.py`, `database.py`, `handlers/` (user, admin, super_admin, common), `keyboards/`, `states.py`, and `middlewares/`.
+2. Implement native error handling inside middleware to log errors without breaking the user experience.
+3. Include a `seed_data()` function executed once on startup if the tables are empty, populating dummy data for categories (like *Burgerlar*, *Lavashlar*) and items with accurate pricing to demonstrate full functionality immediately.
+
+Generate the full code using clean, PEP 8 compliant, highly maintainable async Python structures.
