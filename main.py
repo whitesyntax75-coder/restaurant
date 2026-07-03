@@ -84,6 +84,18 @@ class BookingFSM(StatesGroup):
 class EditRestaurant(StatesGroup):
     field = State()
     value = State()
+    location = State()
+
+class MenuViewFSM(StatesGroup):
+    choose_restaurant = State()
+
+class RatingFSM(StatesGroup):
+    choose_restaurant = State()
+    give_rating = State()
+
+class CommentFSM(StatesGroup):
+    choose_restaurant = State()
+    write_comment = State()
 
 # ─── DATABASE ──────────────────────────────────────────────────────────────────
 
@@ -137,10 +149,115 @@ def init_db():
             updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_tg_id) REFERENCES users(tg_id)
         );
+
+        CREATE TABLE IF NOT EXISTS menu_categories (
+            id              INTEGER PRIMARY KEY,
+            restaurant_id   INTEGER NOT NULL REFERENCES restaurants(id),
+            name            TEXT NOT NULL,
+            emoji           TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS menu_items (
+            id              INTEGER PRIMARY KEY,
+            category_id     INTEGER NOT NULL REFERENCES menu_categories(id),
+            name            TEXT NOT NULL,
+            price           INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ratings (
+            id              INTEGER PRIMARY KEY,
+            customer_tg_id  INTEGER NOT NULL,
+            restaurant_id   INTEGER NOT NULL REFERENCES restaurants(id),
+            rating          INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(customer_tg_id, restaurant_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS comments (
+            id              INTEGER PRIMARY KEY,
+            customer_tg_id  INTEGER NOT NULL,
+            restaurant_id   INTEGER NOT NULL REFERENCES restaurants(id),
+            text            TEXT NOT NULL,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_tg_id) REFERENCES users(tg_id)
+        );
     """)
     conn.commit()
     conn.close()
     logger.info("✅ Database initialized")
+
+
+def seed_data():
+    """Boshlang'ich restoran va menyu ma'lumotlarini qo'shish"""
+    conn = get_db()
+    # Agar allaqachon restoran bor bo'lsa, o'tkazib yuborish
+    existing = conn.execute("SELECT id FROM restaurants LIMIT 1").fetchone()
+    if existing:
+        conn.close()
+        return
+
+    # Super admin foydalanuvchi sifatida
+    admin_id = SUPER_ADMIN_IDS[0]
+    conn.execute(
+        "INSERT OR IGNORE INTO users (tg_id, role, full_name, phone) VALUES (?,?,?,?)",
+        (admin_id, "superadmin", "Super Admin", "+998999108050"),
+    )
+
+    # Restoran qo'shish
+    conn.execute("""
+        INSERT INTO restaurants
+        (owner_tg_id, name, cuisine_type, tables_count,
+         price_min, price_max, phone, address, is_approved)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    """, (admin_id, "SHRIFT X", "🍔 Fast Food", 10,
+          12000, 40000, "+998999108050",
+          "Guliston shahri"))
+
+    rest_id = conn.execute("SELECT id FROM restaurants WHERE owner_tg_id=?", (admin_id,)).fetchone()[0]
+
+    # Menyu kategoriyalari va mahsulotlar
+    menu_data = {
+        ("Lavashlar", "🌯"): [
+            ("Standart Lavash", 25000),
+            ("Big Lavash", 28000),
+            ("Sirli Lavash", 32000),
+        ],
+        ("Gamburger & Haggi", "🍔"): [
+            ("Standart Gamburger", 18000),
+            ("Katta Gamburger", 20000),
+            ("Standart Haggi", 25000),
+        ],
+        ("Donerlar", "🥙"): [
+            ("Standart Doner", 25000),
+            ("Sirli Doner", 30000),
+        ],
+        ("Hot-doglar", "🌭"): [
+            ("Tim Hot Dog", 12000),
+            ("Kanada Hot Dog", 14000),
+            ("Korolevskiy Hot Dog", 16000),
+        ],
+        ("Tovuq & Fri", "🍟"): [
+            ("File (Tovuq filesi)", 30000),
+            ("Fri", 12000),
+            ("File + Fri (Kombinatsiya)", 40000),
+        ],
+    }
+
+    for (cat_name, emoji), items in menu_data.items():
+        conn.execute(
+            "INSERT INTO menu_categories (restaurant_id, name, emoji) VALUES (?,?,?)",
+            (rest_id, cat_name, emoji),
+        )
+        cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        for item_name, price in items:
+            conn.execute(
+                "INSERT INTO menu_items (category_id, name, price) VALUES (?,?,?)",
+                (cat_id, item_name, price),
+            )
+
+    conn.commit()
+    conn.close()
+    logger.info("✅ Seed data qo'shildi")
 
 # ─── DB YORDAMCHI FUNKSIYALAR ──────────────────────────────────────────────────
 
@@ -363,13 +480,76 @@ def db_global_stats() -> dict:
     conn.close()
     return dict(row)
 
+def db_get_menu(restaurant_id: int) -> list:
+    conn = get_db()
+    categories = conn.execute(
+        "SELECT * FROM menu_categories WHERE restaurant_id=? ORDER BY id",
+        (restaurant_id,),
+    ).fetchall()
+    result = []
+    for cat in categories:
+        items = conn.execute(
+            "SELECT * FROM menu_items WHERE category_id=? ORDER BY id",
+            (cat["id"],),
+        ).fetchall()
+        result.append({"category": dict(cat), "items": [dict(i) for i in items]})
+    conn.close()
+    return result
+
+
+def db_add_rating(tg_id: int, restaurant_id: int, rating: int):
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO ratings (customer_tg_id, restaurant_id, rating) VALUES (?,?,?)",
+        (tg_id, restaurant_id, rating),
+    )
+    conn.commit()
+    conn.close()
+
+
+def db_get_avg_rating(restaurant_id: int) -> dict:
+    conn = get_db()
+    row = conn.execute(
+        "SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM ratings WHERE restaurant_id=?",
+        (restaurant_id,),
+    ).fetchone()
+    conn.close()
+    return {"avg": round(row["avg_rating"], 1) if row["avg_rating"] else 0, "count": row["count"]}
+
+
+def db_add_comment(tg_id: int, restaurant_id: int, text: str):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO comments (customer_tg_id, restaurant_id, text) VALUES (?,?,?)",
+        (tg_id, restaurant_id, text),
+    )
+    conn.commit()
+    conn.close()
+
+
+def db_get_comments(restaurant_id: int, limit: int = 15) -> list:
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT c.*, u.full_name
+        FROM comments c
+        JOIN users u ON u.tg_id = c.customer_tg_id
+        WHERE c.restaurant_id=?
+        ORDER BY c.created_at DESC
+        LIMIT ?
+    """, (restaurant_id, limit)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # ─── KLAVIATURALAR ─────────────────────────────────────────────────────────────
 
 def kb_main_customer() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🍽 Restoran tanlash"), KeyboardButton(text="📋 Bronlarim")],
-            [KeyboardButton(text="👤 Profilim")],
+            [KeyboardButton(text="🍽 Restoran tanlash"), KeyboardButton(text="📜 Menyu")],
+            [KeyboardButton(text="⭐ Baho berish"), KeyboardButton(text="💬 Izohlar")],
+            [KeyboardButton(text="📋 Bronlarim"), KeyboardButton(text="👤 Profilim")],
+            [KeyboardButton(text="📍 Lokatsiya"), KeyboardButton(text="📞 Aloqa")],
         ],
         resize_keyboard=True,
     )
@@ -1383,7 +1563,8 @@ async def edit_profile_menu(msg: Message, state: FSMContext):
              InlineKeyboardButton(text="📞 Telefon",     callback_data="editrest_phone")],
             [InlineKeyboardButton(text="📍 Manzil",      callback_data="editrest_address"),
              InlineKeyboardButton(text="🪑 Stollar soni",callback_data="editrest_tables")],
-            [InlineKeyboardButton(text="💰 Narxlar",     callback_data="editrest_price")],
+            [InlineKeyboardButton(text="💰 Narxlar",     callback_data="editrest_price"),
+             InlineKeyboardButton(text="📍 Manzil (lokatsiya)", callback_data="editrest_location")],
         ]),
     )
     await state.set_state(EditRestaurant.field)
@@ -1392,6 +1573,14 @@ async def edit_profile_menu(msg: Message, state: FSMContext):
 @router.callback_query(EditRestaurant.field, F.data.startswith("editrest_"))
 async def edit_field_selected(call: CallbackQuery, state: FSMContext):
     field = call.data.replace("editrest_", "")
+    if field == "location":
+        await call.message.delete()
+        await call.message.answer(
+            "📍 Yangi manzilni (lokatsiyani) ulashing:",
+            reply_markup=kb_location(),
+        )
+        await state.set_state(EditRestaurant.location)
+        return
     prompts = {
         "name":    "Yangi nom kiriting:",
         "phone":   "Yangi telefon raqami kiriting:",
@@ -1440,6 +1629,254 @@ async def edit_field_value(msg: Message, state: FSMContext):
     conn.close()
     await state.clear()
     await msg.answer("✅ Ma'lumot yangilandi!", reply_markup=kb_main_restaurant())
+
+
+@router.message(EditRestaurant.location)
+async def edit_location_value(msg: Message, state: FSMContext):
+    if msg.text == "⬅️ Ortga":
+        await state.clear()
+        await msg.answer("Tahrirlash bekor qilindi.", reply_markup=kb_main_restaurant())
+        return
+    if msg.text == "⏭ O'tkazib yuborish":
+        await state.clear()
+        await msg.answer("Tahrirlash bekor qilindi.", reply_markup=kb_main_restaurant())
+        return
+    if not msg.location:
+        await msg.answer("❗ Iltimos, lokatsiyani tugma orqali ulashing:", reply_markup=kb_location())
+        return
+    lat = msg.location.latitude
+    lon = msg.location.longitude
+    tg_id = msg.from_user.id
+    conn = get_db()
+    conn.execute(
+        "UPDATE restaurants SET latitude=?, longitude=? WHERE owner_tg_id=?",
+        (lat, lon, tg_id),
+    )
+    conn.commit()
+    conn.close()
+    await state.clear()
+    await msg.answer("✅ Manzil (lokatsiya) yangilandi!", reply_markup=kb_main_restaurant())
+
+# ── MIJOZ: MENYU ─────────────────────────────────────────────────────────────
+
+@router.message(F.text == "📜 Menyu")
+async def show_menu(msg: Message):
+    user = db_get_user(msg.from_user.id)
+    if not user or user["role"] not in ("customer", "superadmin"):
+        return
+    rests = db_list_approved_restaurants()
+    if not rests:
+        await msg.answer("😔 Hozircha faol restoranlar yo'q.")
+        return
+    if len(rests) == 1:
+        rest = rests[0]
+        await send_restaurant_menu(msg, rest["id"], rest["name"])
+    else:
+        buttons = [
+            [InlineKeyboardButton(text=r["name"], callback_data=f"menu_{r['id']}")]
+            for r in rests
+        ]
+        await msg.answer(
+            "🏠 <b>Qaysi restoran menyusini ko'rmoqchisiz?</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+
+
+async def send_restaurant_menu(msg, rest_id: int, rest_name: str):
+    menu = db_get_menu(rest_id)
+    rating = db_get_avg_rating(rest_id)
+    stars = "⭐" * round(rating["avg"]) if rating["avg"] else "—"
+    text = f"📜 <b>{rest_name} — Menyu</b>\n"
+    text += f"⭐ Reyting: {rating['avg']} / 5  ({rating['count']} ovoz)\n\n"
+    if not menu:
+        text += "Menyu hali qo'shilmagan."
+    else:
+        for section in menu:
+            cat = section["category"]
+            text += f"{cat['emoji']} <b>{cat['name']}</b>\n"
+            for item in section["items"]:
+                text += f"  • {item['name']}: <b>{item['price']:,} so'm</b>\n"
+            text += "\n"
+    await msg.answer(text)
+
+
+@router.callback_query(F.data.startswith("menu_"))
+async def menu_callback(call: CallbackQuery):
+    rest_id = int(call.data.split("_")[1])
+    rest = db_get_restaurant_by_id(rest_id)
+    if not rest:
+        await call.answer("Restoran topilmadi!", show_alert=True)
+        return
+    await call.message.delete()
+    await send_restaurant_menu(call.message, rest_id, rest["name"])
+
+
+# ── MIJOZ: BAHO BERISH ────────────────────────────────────────────────────────
+
+@router.message(F.text == "⭐ Baho berish")
+async def rate_start(msg: Message, state: FSMContext):
+    user = db_get_user(msg.from_user.id)
+    if not user or user["role"] != "customer":
+        await msg.answer("❗ Avval mijoz sifatida ro'yxatdan o'ting. /start")
+        return
+    rests = db_list_approved_restaurants()
+    if not rests:
+        await msg.answer("😔 Hozircha faol restoranlar yo'q.")
+        return
+    buttons = [
+        [InlineKeyboardButton(text=r["name"], callback_data=f"rate_rest_{r['id']}")]
+        for r in rests
+    ]
+    await msg.answer(
+        "🏠 <b>Qaysi restoranga baho bermoqchisiz?</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await state.set_state(RatingFSM.choose_restaurant)
+
+
+@router.callback_query(RatingFSM.choose_restaurant, F.data.startswith("rate_rest_"))
+async def rate_choose_rest(call: CallbackQuery, state: FSMContext):
+    rest_id = int(call.data.split("_")[2])
+    await state.update_data(rating_rest_id=rest_id)
+    rating_buttons = [[
+        InlineKeyboardButton(text="⭐ 1", callback_data="rating_1"),
+        InlineKeyboardButton(text="⭐ 2", callback_data="rating_2"),
+        InlineKeyboardButton(text="⭐ 3", callback_data="rating_3"),
+        InlineKeyboardButton(text="⭐ 4", callback_data="rating_4"),
+        InlineKeyboardButton(text="⭐ 5", callback_data="rating_5"),
+    ]]
+    await call.message.edit_text(
+        "⭐ <b>Bahongizni tanlang (1-5 yulduz):</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rating_buttons),
+    )
+    await state.set_state(RatingFSM.give_rating)
+
+
+@router.callback_query(RatingFSM.give_rating, F.data.startswith("rating_"))
+async def rate_give(call: CallbackQuery, state: FSMContext):
+    rating = int(call.data.split("_")[1])
+    data = await state.get_data()
+    rest_id = data["rating_rest_id"]
+    db_add_rating(call.from_user.id, rest_id, rating)
+    avg = db_get_avg_rating(rest_id)
+    await state.clear()
+    stars = "⭐" * rating
+    await call.message.edit_text(
+        f"{stars} <b>Rahmat! Bahongiz qabul qilindi.</b>\n\n"
+        f"Umumiy reyting: <b>{avg['avg']} / 5</b> ({avg['count']} ovoz)"
+    )
+    await call.answer("✅ Baho berildi!")
+
+
+# ── MIJOZ: IZOHLAR ────────────────────────────────────────────────────────────
+
+@router.message(F.text == "💬 Izohlar")
+async def comments_start(msg: Message, state: FSMContext):
+    user = db_get_user(msg.from_user.id)
+    if not user or user["role"] not in ("customer", "superadmin"):
+        return
+    rests = db_list_approved_restaurants()
+    if not rests:
+        await msg.answer("😔 Hozircha faol restoranlar yo'q.")
+        return
+    buttons = [
+        [InlineKeyboardButton(text=r["name"], callback_data=f"cmt_rest_{r['id']}")]
+        for r in rests
+    ]
+    await msg.answer(
+        "💬 <b>Qaysi restoran izohlari?</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await state.set_state(CommentFSM.choose_restaurant)
+
+
+@router.callback_query(CommentFSM.choose_restaurant, F.data.startswith("cmt_rest_"))
+async def comments_choose(call: CallbackQuery, state: FSMContext):
+    rest_id = int(call.data.split("_")[2])
+    rest = db_get_restaurant_by_id(rest_id)
+    comments = db_get_comments(rest_id)
+    await state.update_data(comment_rest_id=rest_id)
+
+    text = f"💬 <b>{rest['name']} — Izohlar</b>\n\n"
+    if not comments:
+        text += "Hali hech qanday izoh yo'q. Birinchi bo'lib izoh qoldiring!\n"
+    else:
+        for c in comments[:10]:
+            text += f"👤 <b>{c['full_name']}</b>\n{c['text']}\n\n"
+
+    await call.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✍️ Izoh qoldirish", callback_data=f"write_cmt_{rest_id}"),
+        ]]),
+    )
+
+
+@router.callback_query(F.data.startswith("write_cmt_"))
+async def write_comment_start(call: CallbackQuery, state: FSMContext):
+    rest_id = int(call.data.split("_")[2])
+    user = db_get_user(call.from_user.id)
+    if not user or user["role"] != "customer":
+        await call.answer("Avval mijoz sifatida ro'yxatdan o'ting!", show_alert=True)
+        return
+    await state.update_data(comment_rest_id=rest_id)
+    await call.message.edit_text("✍️ <b>Izohingizni yozing:</b>")
+    await state.set_state(CommentFSM.write_comment)
+
+
+@router.message(CommentFSM.write_comment)
+async def save_comment(msg: Message, state: FSMContext):
+    if msg.text == "⬅️ Ortga":
+        await state.clear()
+        await msg.answer("Bekor qilindi.", reply_markup=kb_main_customer())
+        return
+    data = await state.get_data()
+    rest_id = data["comment_rest_id"]
+    db_add_comment(msg.from_user.id, rest_id, msg.text.strip())
+    await state.clear()
+    await msg.answer("✅ <b>Izohingiz qabul qilindi!</b> Rahmat 🙏", reply_markup=kb_main_customer())
+
+
+# ── MIJOZ: LOKATSIYA ──────────────────────────────────────────────────────────
+
+@router.message(F.text == "📍 Lokatsiya")
+async def show_location(msg: Message):
+    user = db_get_user(msg.from_user.id)
+    if not user or user["role"] not in ("customer", "superadmin"):
+        return
+    rests = db_list_approved_restaurants()
+    approved_with_location = [r for r in rests if r.get("latitude") and r.get("longitude")]
+    if not approved_with_location:
+        await msg.answer(
+            "📍 <b>Restoran manzili:</b>\n\n"
+            "🏪 ALI DONER\n"
+            "📞 99-910-80-50\n"
+            "📍 Toshkent shahri\n\n"
+            "<i>GPS lokatsiyasi hali qo'shilmagan.</i>"
+        )
+        return
+    for rest in approved_with_location:
+        await msg.answer(f"📍 <b>{rest['name']}</b> — {rest['address']}")
+        await msg.bot.send_location(msg.from_user.id, rest["latitude"], rest["longitude"])
+
+
+# ── MIJOZ: ALOQA ──────────────────────────────────────────────────────────────
+
+@router.message(F.text == "📞 Aloqa")
+async def show_contact(msg: Message):
+    await msg.answer(
+        "📞 <b>Bog'lanish ma'lumotlari</b>\n\n"
+        "🏪 <b>ALI DONER</b>\n\n"
+        "📞 Buyurtma va yetkazib berish:\n"
+        "   <b>99-910-80-50</b>\n\n"
+        "⏰ Ish vaqti: 09:00 — 22:00\n"
+        "📍 Manzil: Toshkent shahri\n\n"
+        "🚗 <b>Dastavka (yetkazib berish) mavjud!</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📞 Qo'ng'iroq qilish", url="tel:+998999108050"),
+        ]]),
+    )
+
 
 # ── ESLATMA SCHEDULER ────────────────────────────────────────────────────────
 
@@ -1511,6 +1948,7 @@ async def unknown(msg: Message):
 
 async def main():
     init_db()
+    seed_data()
 
     bot = Bot(
         token=BOT_TOKEN,
