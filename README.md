@@ -38,3 +38,39 @@ Bot ishlashi uchun SQLite'da quyidagi jadvallardan foydalaniladi:
 ## ⚙️ Ishga tushirish (Local va Deploy)
 1. **Lokal ishga tushirish:** Kutubxonalarni o'rnatish (`pip install aiogram apscheduler`), token sozlamalarini to'g'rilash va `python main.py` orqali ishga tushirish. Bot birinchi marta yonganda avtomatik ravishda `seed_data()` orqali ma'lumotlar bazasiga standart restoranlarni (SHRIFT X, DJIGAR) va ularning menyularini kiritadi.
 2. **Serverga yuklash (Deploy):** Loyiha `Procfile` yordamida Railway yoki shunga o'xshash bulutli serverlarga bevosita GitHub orqali joylanishiga (deploy) to'liq moslashtirilgan.
+
+## ⚠️ Tizimning Kamchiliklari va Optimallashtirish (Production uchun)
+
+Bot hozirgi holatida kichik va o
+ta hajmdagi restoranlar uchun yaxshi ishlaydi. Biroq, foydalanuvchilar soni kopayganda (optimal ishlashi uchun) quyidagi kamchiliklarni tog
+ilash tavsiya etiladi:
+
+### 1. Malumotlar Bazasi (SQLite -> PostgreSQL)
+- **Muammo:** Hozirda SQLite ishlatilmoqda. Agar minglab foydalanuvchilar bir vaqtda botdan foydalansa, SQLite database is locked xatosini berishi mumkin.
+- **Yechim:** Ishonchli, tezkor va xavfsiz bolgan **PostgreSQL** malumotlar bazasiga o	ish va syncpg yoki SQLAlchemy orqali asinxron (bloklanmaydigan) so
+ovlar yozish kerak.
+
+### 2. Holatlarni Saqlash (MemoryStorage -> Redis)
+- **Muammo:** Foydalanuvchi malumot kiritayotganda (FSM states) malumotlar bot xotirasida (MemoryStorage) saqlanadi. Agar Railway serveri ochib yonsa yoki kod yangilansa, barcha mijozlarning oxiriga yetkazilmagan jarayonlari (masalan, ovqat tanlab turgan joyi) ochib ketadi.
+- **Yechim:** **Redis** xotirasini ulash (RedisStorage). Bu ham tezlikni oshiradi, ham bot ochib yonganda mijozlar qolgan joyidan davom etishini taminlaydi.
+
+### 3. Kod Xavfsizligi (.env)
+- **Muammo:** Bot tokeni va Super Admin IDlari kabi maxfiy malumotlar tog
+idan-tog
+i main.py kodining ichida yozilgan.
+- **Yechim:** Ushbu malumotlarni .env faylga kochirish va kodga os.getenv() orqali chaqirish kerak.
+
+### 4. Savat (Cart) va Yetkazib berish (Delivery) yoqligi
+- **Muammo:** Botda chiroyli va toliq menyu bor, lekin mijozlar faqat stol band qila oladi. Ular menyudan taom tanlab, Savatga (Cart) qoshib, uylariga yetkazib berishni buyurtma qila olishmaydi.
+- **Yechim:** Savat va Tolov (Click/Payme) integratsiyasini qoshib, tolaqonli yetkazib berish (Delivery) xizmatini yolga qoyish.
+
+### 5. Bloklanadigan DB so
+ovlari (Synchronous DB)
+- **Muammo:** sqlite3 kutubxonasi Asinxron emas. Ya
+i bazaga yozish vaqtida bot qolgan mijozlarni biroz kutib turishga majbur qiladi.
+- **Yechim:** Asinxron kutubxonalarga (masalan, iosqlite yoki syncpg) o	ish orqali botning bir vaqtda o
+ minglab xabarlarni qotmasdan qayta ishlashiga erishish mumkin.
+
+### 6. Vaqt mintaqasi (Timezone)
+- **Muammo:** APScheduler yordamida yuboriladigan eslatmalar (reminders) serverning vaqtiga qarab ketib qolishi mumkin (UTC). 
+- **Yechim:** Barcha sana va vaqt amaliyotlarini aniq Asia/Tashkent vaqt mintaqasida ishlashini qatiy belgilab qoyish.
