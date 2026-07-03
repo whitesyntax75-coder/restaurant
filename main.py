@@ -161,7 +161,8 @@ def init_db():
             id              INTEGER PRIMARY KEY,
             category_id     INTEGER NOT NULL REFERENCES menu_categories(id),
             name            TEXT NOT NULL,
-            price           INTEGER NOT NULL
+            price           INTEGER NOT NULL,
+            description     TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS ratings (
@@ -182,6 +183,12 @@ def init_db():
             FOREIGN KEY (customer_tg_id) REFERENCES users(tg_id)
         );
     """)
+    # Eski bazani yangilash uchun try-except (description ustunini qo'shish)
+    try:
+        conn.execute("ALTER TABLE menu_items ADD COLUMN description TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # Ustun allaqachon mavjud
+
     conn.commit()
     conn.close()
     logger.info("✅ Database initialized")
@@ -215,32 +222,44 @@ def seed_data():
 
     rest_id = conn.execute("SELECT id FROM restaurants WHERE owner_tg_id=?", (admin_id,)).fetchone()[0]
 
-    # Menyu kategoriyalari va mahsulotlar
+    # Menyu kategoriyalari va mahsulotlar (Yangi, to'liq tavsiflari bilan)
     menu_data = {
         ("Lavashlar", "🌯"): [
-            ("Standart Lavash", 25000),
-            ("Big Lavash", 28000),
-            ("Sirli Lavash", 32000),
+            ("Mol go‘shtli lavash (Standart)", 37000, "Lavash xamiri, grilda pishgan mol go‘shti, barra pomidor, chipslar, piyoz va maxsus sharqona sous/mayonez."),
+            ("Tovuqli lavash (Standart)", 35000, "Lavash xamiri, ziravorlar bilan marinadlangan tovuq go‘shti, pomidor, qarsillaydigan chipslar va sarimsoqli maxsus sous."),
+            ("Pishloqli lavash (Cheese)", 38000, "Mol yoki tovuq go‘shti, pomidor, chipslar va erigan Cheddar pishlog‘i."),
+            ("Achchiq lavash (Spicy)", 35000, "Go‘sht (mol/tovuq), pomidor, chipslar va maxsus achchiq 'Kalampir' sousi. Qizil lavash xamirida."),
+            ("Mini lavash (M)", 29000, "Kichikroq hajmda tezda tamaddi qilish uchun. Tarkibi standart lavash bilan bir xil."),
+            ("Lavash MAX", 50000, "Katta porsiyadagi lavash bo‘lib, ichiga go‘sht va ingredientlar ikki barobar ko‘proq solinadi."),
+            ("Tandir lavash", 38000, "Tandirda pishirilgan maxsus qarsilloq xamirdagi lavash."),
+            ("Fitter lavash", 33000, "Sog‘lom ovqatlanuvchilar uchun: yashil xamir, grildagi tovuq go‘shti, aysberg salati, bodring, pomidor va Fetaxa pishlog‘i."),
         ],
-        ("Gamburger & Haggi", "🍔"): [
-            ("Standart Gamburger", 18000),
-            ("Katta Gamburger", 20000),
-            ("Standart Haggi", 25000),
+        ("Burgerlar", "🍔"): [
+            ("Gamburger (Klassik)", 34000, "Kunjutli yumshoq bulochka, sharbatli mol go‘shtidan kotlet, tuzlangan bodring, pomidor, aysberg salati va klassik sous."),
+            ("Chizburger (Cheeseburger)", 36000, "Klassik gamburger tarkibiga qo‘shimcha ravishda erigan Cheddar pishlog‘i qo‘shilgan."),
+            ("Big Burger / Grand Burger", 50000, "Katta o‘lchamdagi bulochka, 2 ta katta mol go‘shtli kotlet, pomidor, aysberg salati, piyoz halqalari va maxsus sous."),
+            ("Grand Chizburger", 55000, "Katta o‘lchamli burger, 2 ta kotlet va har bir qavat orasida erigan Cheddar pishlog‘i."),
+            ("Mini Burger", 18000, "Bolalar yoki yengil tamaddi uchun kichik hajmdagi bulochka, kichik kotlet va Sezar sousi bilan."),
         ],
-        ("Donerlar", "🥙"): [
-            ("Standart Doner", 25000),
-            ("Sirli Doner", 30000),
+        ("Doner va Xot-doglar", "🌭"): [
+            ("Mol go'shtli Doner", 28000, "Qarsildoq pitada grilda pishgan mol go'shti, barra sabzavotlar va sous."),
+            ("Tovuqli Doner", 26000, "Qarsildoq pitada marinadlangan tovuq go'shti, sabzavotlar va sarimsoq sousi."),
+            ("Klassik Hot-Dog", 15000, "Yumshoq bulochka, sosiska, ketchup, mayonez va xantal."),
+            ("Korolevskiy Hot-Dog", 22000, "Ikkita sosiska, pishloq, bodring va maxsus sous bilan."),
         ],
-        ("Hot-doglar", "🌭"): [
-            ("Tim Hot Dog", 12000),
-            ("Kanada Hot Dog", 14000),
-            ("Korolevskiy Hot Dog", 16000),
+        ("Sneklar (Qo'shimchalar)", "🍟"): [
+            ("Fri kartoshkasi (Standart)", 12000, "Oltin rang qarsildoq kartoshka frisi."),
+            ("Katta Fri", 16000, "Katta porsiyadagi qarsildoq fri."),
+            ("Tovuq qanotchalari (6 dona)", 25000, "Achchiq va shirin sousda qovurilgan qarsildoq tovuq qanotchalari."),
+            ("Tovuq naggetslari (6 dona)", 18000, "Tovuq filesidan tayyorlangan qarsildoq naggetslar."),
         ],
-        ("Tovuq & Fri", "🍟"): [
-            ("File (Tovuq filesi)", 30000),
-            ("Fri", 12000),
-            ("File + Fri (Kombinatsiya)", 40000),
-        ],
+        ("Ichimliklar", "🥤"): [
+            ("Coca-Cola 0.5L", 8000, "Muzdek Coca-Cola."),
+            ("Fanta 0.5L", 8000, "Muzdek Fanta apelsin ta'mida."),
+            ("Sprite 0.5L", 8000, "Muzdek limon ta'mli Sprite."),
+            ("Limon choy 0.5L", 7000, "Tetikashtiruvchi sovuq limon choyi."),
+            ("Ayron", 6000, "Tabiiy ayrondan tayyorlangan salqin ichimlik."),
+        ]
     }
 
     for (cat_name, emoji), items in menu_data.items():
@@ -249,10 +268,10 @@ def seed_data():
             (rest_id, cat_name, emoji),
         )
         cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        for item_name, price in items:
+        for item_name, price, desc in items:
             conn.execute(
-                "INSERT INTO menu_items (category_id, name, price) VALUES (?,?,?)",
-                (cat_id, item_name, price),
+                "INSERT INTO menu_items (category_id, name, price, description) VALUES (?,?,?,?)",
+                (cat_id, item_name, price, desc),
             )
 
     # ─── DJIGAR restoran ──────────────────────────────────────────────────────────
@@ -274,22 +293,22 @@ def seed_data():
 
     djigar_menu = {
         ("Shashliqlar", "🍖"): [
-            ("Napoleon shashliq", 19000),
-            ("Qanot shashliqi", 17000),
-            ("Baliq filesi shashliqi", 19000),
-            ("DJIGAR jigar shashliqi", 15000),
-            ("Mol gosht bolagi", 19000),
+            ("Napoleon shashliq", 19000, ""),
+            ("Qanot shashliqi", 17000, ""),
+            ("Baliq filesi shashliqi", 19000, ""),
+            ("DJIGAR jigar shashliqi", 15000, ""),
+            ("Mol gosht bolagi", 19000, ""),
         ],
         ("Hot-doglar", "🌭"): [
-            ("Hot-dog (qoy goshti)", 24000),
-            ("Hot-dog (mol goshti)", 24000),
-            ("Hot-dog (maydalangan)", 19000),
+            ("Hot-dog (qoy goshti)", 24000, ""),
+            ("Hot-dog (mol goshti)", 24000, ""),
+            ("Hot-dog (maydalangan)", 19000, ""),
         ],
         ("Ichimliklar", "🥛"): [
-            ("Choy bardak", 3000),
-            ("Ayron 0.45", 8000),
-            ("Ayron 0.6", 10000),
-            ("Choy limon bilan", 10000),
+            ("Choy bardak", 3000, ""),
+            ("Ayron 0.45", 8000, ""),
+            ("Ayron 0.6", 10000, ""),
+            ("Choy limon bilan", 10000, ""),
         ],
     }
 
@@ -299,10 +318,10 @@ def seed_data():
             (djigar_id, cat_name, emoji),
         )
         cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        for item_name, price in items:
+        for item_name, price, desc in items:
             conn.execute(
-                "INSERT INTO menu_items (category_id, name, price) VALUES (?,?,?)",
-                (cat_id, item_name, price),
+                "INSERT INTO menu_items (category_id, name, price, description) VALUES (?,?,?,?)",
+                (cat_id, item_name, price, desc),
             )
 
     conn.commit()
@@ -1446,10 +1465,7 @@ async def restaurant_bookings(msg: Message):
     if confirmed:
         text = f"✅ <b>Tasdiqlangan bronlar ({len(confirmed)}):</b>\n\n"
         for b in confirmed[:15]:
-            text += (
-                f"• #{b['id']}  {b['booking_date']} {b['booking_time']}\n"
-                f"  {b['customer_name']} ({b['customer_phone']})  👥{b['guests_count']}\n"
-            )
+            text += format_booking_full(b, show_customer=True) + "\n"
         await msg.answer(text, reply_markup=kb_main_restaurant())
 
 
@@ -1746,6 +1762,8 @@ async def send_restaurant_menu(msg, rest_id: int, rest_name: str):
             text += f"{cat['emoji']} <b>{cat['name']}</b>\n"
             for item in section["items"]:
                 text += f"  • {item['name']}: <b>{item['price']:,} so'm</b>\n"
+                if item.get("description"):
+                    text += f"    └ <i>{item['description']}</i>\n"
             text += "\n"
     await msg.answer(text)
 
